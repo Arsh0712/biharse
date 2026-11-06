@@ -1,0 +1,346 @@
+// BiharSe — commerce schema (SQLite portable; prices always in paise/Int)
+
+generator client {
+  provider = "prisma-client-js"
+  // Vercel serverless runs on Amazon Linux (OpenSSL 3) — ship the matching query
+  // engine alongside the native one so a client generated on any machine works
+  // at runtime on Vercel / Docker / CI alike.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  slug      String    @unique
+  nameEn    String
+  nameHi    String
+  descEn    String    @default("")
+  descHi    String    @default("")
+  sortOrder Int       @default(0)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+}
+
+model Product {
+  id            String   @id @default(cuid())
+  slug          String   @unique
+  nameEn        String
+  nameHi        String
+  taglineEn     String   @default("")
+  taglineHi     String   @default("")
+  storyEn       String   @default("")
+  storyHi       String   @default("")
+  ingredientsEn String   @default("")
+  ingredientsHi String   @default("")
+  allergensEn   String   @default("")
+  allergensHi   String   @default("")
+  storageEn     String   @default("")
+  storageHi     String   @default("")
+  shelfLifeDays Int      @default(30)
+  categoryId    String
+  category      Category @relation(fields: [categoryId], references: [id])
+  mrp           Int // paise
+  price         Int // paise (sale price)
+  gstRate       Int      @default(5)
+  hsn           String   @default("1905")
+  stock         Int      @default(100)
+  lowStockAt    Int      @default(12)
+  isFeatured    Boolean  @default(false)
+  isDemo        Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  batchDate     String   @default("")
+  imagesJson    String   @default("[]") // string[]
+  variantsJson  String   @default("[]") // [{label, weightG, priceDelta}]
+  faqJson       String   @default("[]") // [{qEn,qHi,aEn,aHi}]
+  nutritionJson String   @default("[]") // [{label, per100g}]
+  seoTitle      String   @default("")
+  seoDesc       String   @default("")
+  rating        Float    @default(0)
+  reviewCount   Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  reviews       Review[]
+  orderItems    OrderItem[]
+  wishlistItems WishlistItem[]
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  customerId String?
+  customer  Customer? @relation(fields: [customerId], references: [id])
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name      String
+  city      String   @default("")
+  rating    Int
+  title     String   @default("")
+  body      String
+  photoJson String   @default("[]")
+  verified  Boolean  @default(false)
+  approved  Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Customer {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String
+  phone         String   @default("")
+  passwordHash  String   @default("")
+  role          String   @default("CUSTOMER") // CUSTOMER | OWNER | MANAGER | PACKING | SUPPORT | ADMIN
+  googleId      String   @default("")
+  emailVerified Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  sessions      Session[]
+  otps          OtpCode[]
+  orders        Order[]
+  addresses     Address[]
+  wishlistItems WishlistItem[]
+  reviews       Review[]
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  token      String   @unique
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+}
+
+model OtpCode {
+  id        String    @id @default(cuid())
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+  email     String
+  codeHash  String
+  purpose   String    @default("LOGIN")
+  attempts  Int       @default(0)
+  expiresAt DateTime
+  consumed  Boolean   @default(false)
+  createdAt DateTime  @default(now())
+}
+
+model Address {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  label      String   @default("Home")
+  name       String
+  phone      String
+  line1      String
+  line2      String   @default("")
+  city       String
+  state      String
+  pincode    String
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+}
+
+model Order {
+  id              String    @id @default(cuid())
+  number          String    @unique // BS-2026-XXXXXX
+  customerId      String?
+  customer        Customer? @relation(fields: [customerId], references: [id])
+  email           String
+  phone           String
+  status          String    @default("PENDING_PAYMENT") // PENDING_PAYMENT | PAID | PACKING | SHIPPED | OUT_FOR_DELIVERY | DELIVERED | CANCELLED | REFUNDED | PAYMENT_FAILED | PAYMENT_REVIEW
+  subtotal        Int
+  discount        Int       @default(0)
+  shipping        Int       @default(0)
+  total           Int
+  couponCode      String    @default("")
+  giftNote        String    @default("")
+  clientToken     String    @default("") // double-submit guard (one checkout attempt = one token)
+  consentAt       DateTime? // terms consent timestamp (Consumer Protection Rules)
+  consentIp       String    @default("")
+  consentVersion  String    @default("")
+  gstFieldsJson   String    @default("") // {legalName,gstin,invoiceEmail}
+  addressJson     String // full shipping address snapshot
+  billingJson     String    @default("") // billing address snapshot when different from shipping
+  paymentProvider String    @default("razorpay") // razorpay | sandbox
+  paymentOrderId  String    @default("")
+  paymentId       String    @default("")
+  paymentSignature String   @default("")
+  paymentMethod   String    @default("")
+  trackingNumber  String    @default("")
+  courier         String    @default("")
+  shippedAt       DateTime?
+  deliveredAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  items           OrderItem[]
+  paymentEvents   PaymentEvent[]
+
+  @@index([clientToken])
+}
+
+model Claim {
+  id           String   @id @default(cuid())
+  claimNumber  String   @unique // CL-XXXXXX
+  orderNumber  String
+  email        String
+  type         String // DAMAGED | WRONG_ITEM | EXPIRED | MISSING | OTHER
+  description  String
+  evidencePath String   @default("")
+  status       String   @default("OPEN") // OPEN | REVIEWING | APPROVED | REJECTED | RESOLVED
+  refundAmount Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model ConsentLog {
+  id             String   @id @default(cuid())
+  email          String   @default("") // optional, linked account
+  anonId         String   @default("") // pseudonymous device id
+  analyticsOk    Boolean  @default(false)
+  marketingOk    Boolean  @default(false)
+  policyVersion  String   @default("v1")
+  ipHash         String   @default("")
+  userAgent      String   @default("")
+  createdAt      DateTime @default(now())
+}
+
+model OrderItem {
+  id          String  @id @default(cuid())
+  orderId     String
+  order       Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  slug        String
+  nameEn      String
+  variantLabel String @default("")
+  weightG     Int     @default(0)
+  unitPrice   Int
+  mrp         Int     @default(0)
+  qty         Int
+  lineTotal   Int
+  image       String  @default("")
+}
+
+model Coupon {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  type        String    @default("PERCENT") // PERCENT | FLAT
+  value       Int // percent (15) or paise
+  minSubtotal Int       @default(0)
+  maxDiscount Int       @default(0) // paise, 0 = uncapped
+  active      Boolean   @default(true)
+  expiresAt   DateTime?
+  usageCount  Int       @default(0)
+  note        String    @default("")
+}
+
+model PaymentEvent {
+  id             String   @id @default(cuid())
+  orderId        String?
+  order          Order?   @relation(fields: [orderId], references: [id])
+  provider       String
+  eventType      String
+  externalEventId String  @default("")
+  paymentOrderId String   @default("")
+  paymentId      String   @default("")
+  payloadJson    String   @default("")
+  signatureValid Boolean  @default(false)
+  processed      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  @@unique([provider, externalEventId])
+}
+
+model WebhookEvent {
+  id          String   @id @default(cuid())
+  provider    String
+  eventId     String   @unique
+  eventType   String
+  payloadJson String
+  processed   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+model EmailOutbox {
+  id        String   @id @default(cuid())
+  toEmail   String
+  template  String
+  subject   String
+  html      String
+  text      String   @default("")
+  status    String   @default("QUEUED") // QUEUED | SENT | FAILED | LOGGED
+  provider  String   @default("SMTP")
+  error     String   @default("")
+  attempts  Int      @default(0)
+  sentAt    DateTime?
+  createdAt DateTime @default(now())
+}
+
+model SiteSetting {
+  key       String   @id
+  valueJson String
+  updatedAt DateTime @updatedAt
+}
+
+model ChhathYear {
+  id            String   @id @default(cuid())
+  year          Int      @unique
+  nahayKhay     DateTime
+  kharna        DateTime
+  sandhyaArghya DateTime
+  ushaArghya    DateTime
+  note          String   @default("")
+}
+
+model PincodeEstimate {
+  id           String  @id @default(cuid())
+  pincode      String  @unique
+  city         String
+  state        String
+  minDays      Int     @default(5)
+  maxDays      Int     @default(8)
+  serviceable  Boolean @default(true)
+}
+
+model ContactMessage {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  phone     String   @default("")
+  subject   String   @default("")
+  message   String
+  status    String   @default("NEW") // NEW | REPLIED | CLOSED
+  createdAt DateTime @default(now())
+}
+
+model NewsletterSubscriber {
+  id         String    @id @default(cuid())
+  email      String    @unique
+  status     String    @default("PENDING") // PENDING | CONFIRMED | UNSUBSCRIBED
+  token      String    @unique
+  confirmedAt DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+model WishlistItem {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([customerId, productId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actor     String
+  action    String
+  metaJson  String   @default("")
+  createdAt DateTime @default(now())
+}

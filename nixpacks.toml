@@ -1,0 +1,25 @@
+# BiharSe — Nixpacks build plan (Railway and any Nixpacks-based host).
+#
+# Stack: Next.js 16 (App Router) + Prisma 6.
+#   DB_CLIENT=sqlite (default) → prisma/schema.prisma   (file: SQLite)
+#   DB_CLIENT=mysql            → prisma/schema.mysql.prisma (MySQL 8)
+# Set DATABASE_URL accordingly; see .env.example and docs/deployment.md.
+#
+# The project build script emits the standalone server (.next/standalone) and
+# `bun run start` boots it — it honours the PORT env var provided by the host.
+
+[phases.setup]
+nixPkgs = ["nodejs_22", "bun"]
+
+[phases.install]
+cmds = ["bun install"]
+
+[phases.build]
+cmds = [
+  "node scripts/prisma-generate.mjs",
+  "node scripts/ensure-db.mjs",
+  "bun run build"
+]
+
+[start]
+cmd = "bun run start"

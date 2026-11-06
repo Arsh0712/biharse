@@ -1,0 +1,107 @@
+# BiharSe — LOCAL MySQL STACK (docker compose).
+# Gives the app a real MySQL 8 database; the sandbox/dev preview keeps SQLite.
+# (Prisma needs one provider per generated client, so both schema files live
+#  side by side — prisma/schema.prisma (sqlite) and prisma/schema.mysql.prisma.)
+#
+# ── Quick start ──────────────────────────────────────────────────────────────
+#   docker compose up -d --build      # builds the app with DB_CLIENT=mysql and
+#                                     # starts MySQL 8 + the app on :3000
+#   open http://localhost:3000        # schema is pushed automatically on boot
+#
+# ── Bring your sandbox data along (optional) ─────────────────────────────────
+#   bun run db:export                 # writes /tmp/biharse-mysql-dump.json
+#   # then uncomment the dump mount under `app.volumes` below and re-run:
+#   docker compose up -d              # entrypoint imports the dump (idempotent)
+#
+# ── Debugging the database ───────────────────────────────────────────────────
+#   docker compose run --rm db-shell          # mysql client inside the network
+#   # (this service is in the "debug" profile: `docker compose --profile debug up`
+#   #  also works; it never starts with a plain `up`)
+#   # To expose 3306 to your host instead (beware: clashes if you already run a
+#   # local MySQL on 3306), uncomment `mysql.ports` below.
+#
+# ── Overrides ────────────────────────────────────────────────────────────────
+# Secrets here are LOCAL-ONLY defaults. Override without editing this file:
+#   MYSQL_PASSWORD=x MYSQL_ROOT_PASSWORD=y docker compose up -d
+# or put them in the project `.env` (see .env.example's MySQL block).
+
+name: biharse
+
+services:
+  mysql:
+    image: mysql:8.0
+    # utf8mb4 server-wide: Hindi copy + emoji must survive without per-column work.
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    environment:
+      MYSQL_DATABASE: biharse
+      MYSQL_USER: biharse
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-biharse-pass}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root-pass}
+    volumes:
+      - biharse-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+    # Uncomment to reach MySQL from a host client (TablePlus/DBeaver/mysql CLI):
+    # ports:
+    #   - "127.0.0.1:3306:3306"
+
+  app:
+    build:
+      context: .
+      args:
+        DB_CLIENT: mysql
+        # NEXT_PUBLIC_* are baked at BUILD time — pass them here when needed:
+        # NEXT_PUBLIC_GA4_ID: ${NEXT_PUBLIC_GA4_ID:-}
+        # NEXT_PUBLIC_META_PIXEL_ID: ${NEXT_PUBLIC_META_PIXEL_ID:-}
+    environment:
+      # charset=utf8mb4 + a small pool; matches the utf8mb4 server config above.
+      DATABASE_URL: mysql://biharse:${MYSQL_PASSWORD:-biharse-pass}@mysql:3306/biharse?connection_limit=10&charset=utf8mb4
+      DB_CLIENT: mysql
+      NODE_ENV: production
+      SITE_URL: ${SITE_URL:-http://localhost:3000}
+      # Business envs (Razorpay/SMTP/Google/ADMIN_*) come from .env if present:
+    env_file:
+      - .env
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    volumes:
+      # Optional one-time data migration from the SQLite sandbox:
+      #   bun run db:export   (writes /tmp/biharse-mysql-dump.json) then uncomment:
+      # - /tmp/biharse-mysql-dump.json:/tmp/biharse-mysql-dump.json:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bun -e \"fetch('http://127.0.0.1:3000/api/bootstrap').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # One-shot MySQL client, usable without exposing 3306 to the host:
+  #   docker compose run --rm db-shell
+  db-shell:
+    image: mysql:8.0
+    profiles: ["debug"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    entrypoint:
+      - mysql
+      - -h
+      - mysql
+      - -u
+      - biharse
+      - -p${MYSQL_PASSWORD:-biharse-pass}
+      - biharse
+    stdin_open: true
+    tty: true
+
+volumes:
+  biharse-mysql-data:

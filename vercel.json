@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "installCommand": "bun install",
+  "buildCommand": "node scripts/prisma-generate.mjs && node scripts/ensure-db.mjs && next build"
+}

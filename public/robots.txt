@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /?v=admin
+Disallow: /?v=account
+Disallow: /?v=checkout
+
+Sitemap: https://biharse.org/sitemap.xml
